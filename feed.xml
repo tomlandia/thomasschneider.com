@@ -1,0 +1,405 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Thomas Schneider</title>
+  <link href="http://thomasschneider.com//feed.xml" rel="self"/>
+  <link href="http://thomasschneider.com//"/>
+  <updated>2016-01-20T18:08:53+01:00</updated>
+  <id>http://thomasschneider.com//</id>
+  <author>
+    <name>Thomas Schneider</name>
+  </author>
+  <generator>Jekyll v2.5.3</generator>
+
+  
+  <entry>
+    <title>Tiny Voronoi-diagram-based map generator in CoffeeScript and ClojureScript</title>
+    <link href="http://thomasschneider.com//tiny-voronoi-diagram-based-map-generator.html"/>
+    <updated>2014-12-26T00:00:00+01:00</updated>
+    <id>http://thomasschneider.com//tiny-voronoi-diagram-based-map-generator</id>
+    <content type="html">&lt;p&gt;This actually was my Recurse Center pair programming interview project.&lt;/p&gt;
+
+&lt;p&gt;Like this &lt;a href=&quot;http://www-cs-students.stanford.edu/%7Eamitp/game-programming/polygon-map-generation/&quot;&gt;polished generator&lt;/a&gt;, it generates a Voronoi diagram, applies Lyoid’s relaxation then generates a map based on cells except:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;it uses the naive bitmap approach instead of using a Fortune algorithm implementation&lt;/li&gt;
+  &lt;li&gt;thus it doesn’t have features based on Delaunay-relaxation!&lt;/li&gt;
+  &lt;li&gt;it’s written from scratch in Coffee and Clojure script instead of Flash&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Number of cells:
+&lt;input type=&quot;number&quot; value=&quot;50&quot; id=&quot;ncells&quot; /&gt;
+&lt;input type=&quot;submit&quot; value=&quot;Go!&quot; id=&quot;go&quot; /&gt;&lt;/p&gt;
+&lt;canvas id=&quot;random_voronoi_diagram&quot;&gt;&lt;/canvas&gt;
+&lt;canvas id=&quot;round_island&quot;&gt;&lt;/canvas&gt;
+
+&lt;p&gt;Original CoffeeScript:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;rand_int = (upper_bound) -&amp;gt; Math.floor(Math.random() * upper_bound)
+
+
+euclidian_distance = (p1, p2) -&amp;gt;
+    Math.sqrt (p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2
+
+
+voronoi_bitmap = (sites, height, width) -&amp;gt;
+    [1..height].map (row) -&amp;gt;
+        [1..width].map (column) -&amp;gt;
+            pixel = {x: row, y: column}
+            distances = (euclidian_distance(pixel, site) for site in sites)
+
+            distances.indexOf(Math.min.apply(@, distances))
+
+
+centroids = (bitmap) -&amp;gt;
+    counts = []
+    for row in [0..bitmap.length - 1]
+        for column in [0..bitmap[row].length - 1]
+            current_cell = bitmap[row][column]
+            counts[current_cell] ||= {sumx: 0, sumy: 0, n: 0}
+            counts[current_cell].sumx += row
+            counts[current_cell].sumy += column
+            counts[current_cell].n += 1
+
+    counts.map (cell_count) -&amp;gt; {
+        x: cell_count.sumx / cell_count.n,
+        y: cell_count.sumy / cell_count.n
+    }
+
+lyoid_relaxation = (bitmap, iterations=1) -&amp;gt;
+    heigth = bitmap.length
+    width = bitmap[0].length
+
+    for i in [1..iterations]
+        bitmap = voronoi_bitmap(centroids(bitmap), width, heigth)
+
+    bitmap
+
+
+neighbors = (bitmap, ncells) -&amp;gt;
+    graph = ([] for i in [1..ncells])
+
+    for row in [0..bitmap.length - 2]
+        for column in [0..bitmap[row].length - 2]
+            current_cell = bitmap[row][column]
+
+            for neighbor_cell in [bitmap[row+1][column], bitmap[row][column+1]]
+                if current_cell isnt neighbor_cell and neighbor_cell not in graph[current_cell]
+                    graph[current_cell].push(neighbor_cell)
+                    graph[neighbor_cell].push(current_cell)
+
+    graph
+
+
+cell_distances_from = (peak, graph) -&amp;gt;
+    distances = []
+    distance_from_peak = 0
+    current_level = [peak]
+
+    while current_level.length &amp;gt; 0
+        for cell in current_level
+            distances[cell] = distance_from_peak
+
+        next_level = []
+        for cell in current_level
+            for neighbor in graph[cell] when distances[neighbor] is undefined and neighbor not in next_level
+                next_level.push(neighbor)
+
+        current_level = next_level
+        distance_from_peak += 1
+
+    distances
+        
+        
+draw_bitmap = (bitmap, colors, canvas_id) -&amp;gt;
+    heigth = bitmap.length
+    width = bitmap[0].length
+    canvas = document.getElementById(canvas_id)
+    canvas.width = width
+    canvas.heigth = heigth
+    ctx = canvas.getContext(&quot;2d&quot;)
+    image_data = ctx.createImageData(width, heigth)
+
+    for row in [0..heigth-1]
+        for column in [0..width-1]
+            pixel_number = row * width + column
+            color = colors[bitmap[row][column]]
+            #image_data.data[pixel_number*4..pixel_number*4 + 3] = color
+            for i in [0..3]
+                image_data.data[pixel_number*4+i] = color[i]
+    
+    ctx.putImageData(image_data, 0, 0)
+
+
+HEIGHT = WIDTH = 500
+
+document.getElementById(&#39;go&#39;).onclick = -&amp;gt;
+    ncells = parseInt(document.getElementById(&#39;ncells&#39;).value)
+    #draw a random voronoi diagram on #random_voronoi_diagram
+    random_points = ({x: rand_int(HEIGHT), y:rand_int(WIDTH)} for i in [1..ncells])
+    random_bitmap = voronoi_bitmap(random_points, HEIGHT, WIDTH)
+
+    random_colors = ([rand_int(255), rand_int(255), rand_int(255), 255] for i in [1..ncells])
+    draw_bitmap(random_bitmap, random_colors, &#39;random_voronoi_diagram&#39;)
+
+
+    relaxed_bitmap = lyoid_relaxation(random_bitmap, 3)
+
+    graph = neighbors(relaxed_bitmap, ncells)
+
+    distances = cell_distances_from(relaxed_bitmap[HEIGHT/2][WIDTH/2], graph)
+
+    altitude_gradient = ([0, i * 51, 0, 255] for i in [0..5])
+    colors = distances.map (distance) -&amp;gt;
+        altitude_gradient[distance] or [0,0,255,255] #sea if distance &amp;gt; 5
+
+    draw_bitmap(relaxed_bitmap, colors, &#39;round_island&#39;)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Less advanced ClojureScript:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;(defrecord Point [x y])
+(def elem (.-getElementById js/document))
+(defn rand-int [max] (js/parseInt (rand max)))
+(defn double-map [double-array function]
+(map (fn [simple-array] (map function simple-array))))
+
+(defn euclidian-distance [p1 p2]
+  (let [[dx (- (:x p2) (:x p1))]
+        [dy (- (:y p2) (:y p1))]]
+    (Math/sqrt (+ (* dx dx) (* dy dy)))))
+
+
+(defn voronoi-bitmap [sites height width]
+  (for [row (range 0 (- height 1))
+        height (range 0 (- width 1))]
+     (let [[current-pixel (Point. row height)]
+           [distances (vector (map sites #(euclidian-distance current-pixel %)))]]
+       (.indexOf distances (min distances)))))
+
+(defn draw-bitmap [bitmap colors width height canvas-id]
+    (.putImageData
+      (.getContext (elem canvas-id) &quot;2d&quot;)
+      (js/Uint8Array. (flatten
+        (double-map
+          (fn [cell-number] (nth colors cell-number))
+          bitmap)))))
+
+(set! (.-onclick (elem &quot;go&quot;)) #(
+  (let [[ncells (.value (elem &quot;ncells-input&quot;))]
+        [random-points (for [i (range 1 ncells)] (Point. (rand-int height) (rand-int width)))]
+        [random-colors (for [i (range 1 ncells)] [(rand-int 255) (rand-int 255) (rand-int 255) 255])]]
+    (draw-bitmap
+      (voronoi-bitmap random-points random-colors 500 500 &quot;random_voronoi_diagram&quot;)
+      &quot;random_voronoi_diagram&quot;))
+))
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;script&gt;
+// Generated by CoffeeScript 1.8.0
+var HEIGHT, WIDTH, cell_distances_from, centroids, draw_bitmap, euclidian_distance, lyoid_relaxation, neighbors, rand_int, voronoi_bitmap,
+  __indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i &lt; l; i++) { if (i in this &amp;&amp; this[i] === item) return i; } return -1; };
+
+rand_int = function(upper_bound) {
+  return Math.floor(Math.random() * upper_bound);
+};
+
+euclidian_distance = function(p1, p2) {
+  return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+};
+
+voronoi_bitmap = function(sites, height, width) {
+  var _i, _results;
+  return (function() {
+    _results = [];
+    for (var _i = 1; 1 &lt;= height ? _i &lt;= height : _i &gt;= height; 1 &lt;= height ? _i++ : _i--){ _results.push(_i); }
+    return _results;
+  }).apply(this).map(function(row) {
+    var _i, _results;
+    return (function() {
+      _results = [];
+      for (var _i = 1; 1 &lt;= width ? _i &lt;= width : _i &gt;= width; 1 &lt;= width ? _i++ : _i--){ _results.push(_i); }
+      return _results;
+    }).apply(this).map(function(column) {
+      var distances, pixel, site;
+      pixel = {
+        x: row,
+        y: column
+      };
+      distances = (function() {
+        var _i, _len, _results;
+        _results = [];
+        for (_i = 0, _len = sites.length; _i &lt; _len; _i++) {
+          site = sites[_i];
+          _results.push(euclidian_distance(pixel, site));
+        }
+        return _results;
+      })();
+      return distances.indexOf(Math.min.apply(this, distances));
+    });
+  });
+};
+
+centroids = function(bitmap) {
+  var column, counts, current_cell, row, _i, _j, _ref, _ref1;
+  counts = [];
+  for (row = _i = 0, _ref = bitmap.length - 1; 0 &lt;= _ref ? _i &lt;= _ref : _i &gt;= _ref; row = 0 &lt;= _ref ? ++_i : --_i) {
+    for (column = _j = 0, _ref1 = bitmap[row].length - 1; 0 &lt;= _ref1 ? _j &lt;= _ref1 : _j &gt;= _ref1; column = 0 &lt;= _ref1 ? ++_j : --_j) {
+      current_cell = bitmap[row][column];
+      counts[current_cell] || (counts[current_cell] = {
+        sumx: 0,
+        sumy: 0,
+        n: 0
+      });
+      counts[current_cell].sumx += row;
+      counts[current_cell].sumy += column;
+      counts[current_cell].n += 1;
+    }
+  }
+  return counts.map(function(cell_count) {
+    return {
+      x: cell_count.sumx / cell_count.n,
+      y: cell_count.sumy / cell_count.n
+    };
+  });
+};
+
+lyoid_relaxation = function(bitmap, iterations) {
+  var heigth, i, width, _i;
+  if (iterations == null) {
+    iterations = 1;
+  }
+  heigth = bitmap.length;
+  width = bitmap[0].length;
+  for (i = _i = 1; 1 &lt;= iterations ? _i &lt;= iterations : _i &gt;= iterations; i = 1 &lt;= iterations ? ++_i : --_i) {
+    bitmap = voronoi_bitmap(centroids(bitmap), width, heigth);
+  }
+  return bitmap;
+};
+
+neighbors = function(bitmap, ncells) {
+  var column, current_cell, graph, i, neighbor_cell, row, _i, _j, _k, _len, _ref, _ref1, _ref2;
+  graph = (function() {
+    var _i, _results;
+    _results = [];
+    for (i = _i = 1; 1 &lt;= ncells ? _i &lt;= ncells : _i &gt;= ncells; i = 1 &lt;= ncells ? ++_i : --_i) {
+      _results.push([]);
+    }
+    return _results;
+  })();
+  for (row = _i = 0, _ref = bitmap.length - 2; 0 &lt;= _ref ? _i &lt;= _ref : _i &gt;= _ref; row = 0 &lt;= _ref ? ++_i : --_i) {
+    for (column = _j = 0, _ref1 = bitmap[row].length - 2; 0 &lt;= _ref1 ? _j &lt;= _ref1 : _j &gt;= _ref1; column = 0 &lt;= _ref1 ? ++_j : --_j) {
+      current_cell = bitmap[row][column];
+      _ref2 = [bitmap[row + 1][column], bitmap[row][column + 1]];
+      for (_k = 0, _len = _ref2.length; _k &lt; _len; _k++) {
+        neighbor_cell = _ref2[_k];
+        if (current_cell !== neighbor_cell &amp;&amp; __indexOf.call(graph[current_cell], neighbor_cell) &lt; 0) {
+          graph[current_cell].push(neighbor_cell);
+          graph[neighbor_cell].push(current_cell);
+        }
+      }
+    }
+  }
+  return graph;
+};
+
+cell_distances_from = function(peak, graph) {
+  var cell, current_level, distance_from_peak, distances, neighbor, next_level, _i, _j, _k, _len, _len1, _len2, _ref;
+  distances = [];
+  distance_from_peak = 0;
+  current_level = [peak];
+  while (current_level.length &gt; 0) {
+    for (_i = 0, _len = current_level.length; _i &lt; _len; _i++) {
+      cell = current_level[_i];
+      distances[cell] = distance_from_peak;
+    }
+    next_level = [];
+    for (_j = 0, _len1 = current_level.length; _j &lt; _len1; _j++) {
+      cell = current_level[_j];
+      _ref = graph[cell];
+      for (_k = 0, _len2 = _ref.length; _k &lt; _len2; _k++) {
+        neighbor = _ref[_k];
+        if (distances[neighbor] === void 0 &amp;&amp; __indexOf.call(next_level, neighbor) &lt; 0) {
+          next_level.push(neighbor);
+        }
+      }
+    }
+    current_level = next_level;
+    distance_from_peak += 1;
+  }
+  return distances;
+};
+
+draw_bitmap = function(bitmap, colors, canvas_id) {
+  var color, column, ctx, heigth, i, image_data, pixel_number, row, width, _i, _j, _k, _ref, _ref1;
+  heigth = bitmap.length;
+  width = bitmap[0].length;
+  var canvas = document.getElementById(canvas_id);
+  canvas.height = heigth;
+  canvas.width = width;
+  ctx = canvas.getContext(&quot;2d&quot;);
+  image_data = ctx.createImageData(width, heigth);
+  for (row = _i = 0, _ref = heigth - 1; 0 &lt;= _ref ? _i &lt;= _ref : _i &gt;= _ref; row = 0 &lt;= _ref ? ++_i : --_i) {
+    for (column = _j = 0, _ref1 = width - 1; 0 &lt;= _ref1 ? _j &lt;= _ref1 : _j &gt;= _ref1; column = 0 &lt;= _ref1 ? ++_j : --_j) {
+      pixel_number = row * width + column;
+      color = colors[bitmap[row][column]];
+      for (i = _k = 0; _k &lt;= 3; i = ++_k) {
+        image_data.data[pixel_number * 4 + i] = color[i];
+      }
+    }
+  }
+  return ctx.putImageData(image_data, 0, 0);
+};
+
+HEIGHT = WIDTH = 500;
+
+document.getElementById(&#39;go&#39;).onclick = function() {
+  var altitude_gradient, colors, distances, graph, i, ncells, random_bitmap, random_colors, random_points, relaxed_bitmap;
+  ncells = parseInt(document.getElementById(&#39;ncells&#39;).value);
+  random_points = (function() {
+    var _i, _results;
+    _results = [];
+    for (i = _i = 1; 1 &lt;= ncells ? _i &lt;= ncells : _i &gt;= ncells; i = 1 &lt;= ncells ? ++_i : --_i) {
+      _results.push({
+        x: rand_int(HEIGHT),
+        y: rand_int(WIDTH)
+      });
+    }
+    return _results;
+  })();
+  random_bitmap = voronoi_bitmap(random_points, HEIGHT, WIDTH);
+  console.log(random_bitmap);
+  random_colors = (function() {
+    var _i, _results;
+    _results = [];
+    for (i = _i = 1; 1 &lt;= ncells ? _i &lt;= ncells : _i &gt;= ncells; i = 1 &lt;= ncells ? ++_i : --_i) {
+      _results.push([rand_int(255), rand_int(255), rand_int(255), 255]);
+    }
+    return _results;
+  })();
+  draw_bitmap(random_bitmap, random_colors, &#39;random_voronoi_diagram&#39;);
+  console.log(centroids(random_bitmap));
+  relaxed_bitmap = lyoid_relaxation(random_bitmap, 3);
+  console.log(relaxed_bitmap);
+  graph = neighbors(relaxed_bitmap, ncells);
+  console.log(graph);
+  distances = cell_distances_from(relaxed_bitmap[HEIGHT / 2][WIDTH / 2], graph);
+  console.log(distances);
+  altitude_gradient = (function() {
+    var _i, _results;
+    _results = [];
+    for (i = _i = 0; _i &lt;= 5; i = ++_i) {
+      _results.push([0, i * 51, 0, 255]);
+    }
+    return _results;
+  })();
+  colors = distances.map(function(distance) {
+    return altitude_gradient[distance] || [0, 0, 255, 255];
+  });
+  return draw_bitmap(relaxed_bitmap, colors, &#39;round_island&#39;);
+};
+&lt;/script&gt;
+
+</content>
+  </entry>
+  
+</feed>
